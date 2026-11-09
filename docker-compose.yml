@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # 1. MongoDB Database Service
+  mongodb:
+    image: mongo:7.0
+    container_name: agri_mongodb
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_DATABASE: agroadvisory
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - agri-network
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', 'db.adminCommand("ping")']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # 2. Node.js & Express Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agri_backend
+    restart: unless-stopped
+    ports:
+      - '5000:5000'
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/agroadvisory
+      - JWT_SECRET=super_secret_agricultural_advisory_jwt_key_2026_sr_university
+      - JWT_EXPIRES_IN=7d
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-demo_openweather_key}
+      - DEFAULT_LOCATION_CITY=Warangal
+      - DEFAULT_LOCATION_STATE=Telangana
+      - DEFAULT_LOCATION_COUNTRY=IN
+      - RATE_LIMIT_MAX=600
+      - CORS_ORIGIN=http://localhost:3000,http://frontend:80
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - agri-network
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:5000/health']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # 3. React Vite & Nginx Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: agri_frontend
+    restart: unless-stopped
+    ports:
+      - '3000:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - agri-network
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mongodb_data:
+    name: agri_mongodb_data
+
+networks:
+  agri-network:
+    name: agri_platform_network
+    driver: bridge
